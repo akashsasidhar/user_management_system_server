@@ -3,7 +3,7 @@ import multer from "multer";
 import path, { dirname } from "path";
 import { pool } from "../dbConnection/db_init.js";
 import { getJWT } from "../utils/get-jwt.js";
-
+import * as csv from "fast-csv";
 import { decrypt, encrypt } from "../utils/helpers.js";
 const router = express.Router();
 
@@ -43,7 +43,7 @@ router.post("/login", async (req, res) => {
     let payload = rows[0];
     if (rows.length) {
       const token = getJWT(payload);
-      console.log("Record inserted successfully.");
+      console.log("Logged in Successfully.");
       res.status(200).send({
         message: "Logged in Successfully",
         status: 200,
@@ -170,6 +170,53 @@ router.post("/changePassword", async (req, res) => {
       message: "user updated successfully",
       status: 200,
     });
+  }
+});
+router.post("/getLeads", async (req, res) => {
+  try {
+    const result = await pool.query(
+      "SELECT * FROM user_leads where user_id=?",
+      [req.body.id]
+    );
+    console.log(result);
+    res.send({
+      message: "user leads fetched successfully",
+      status: 200,
+      data: result[0],
+    });
+  } catch (error) {
+    console.log(error);
+    res.status(500).json({ message: "Internal server error" });
+  }
+});
+const storage1 = multer.memoryStorage();
+const upload1 = multer({ storage: storage1 });
+router.post("/updateLeads", upload1.single("excelFile"), async (req, res) => {
+  try {
+    // console.log(req);
+    if (!req.file) {
+      console.log("No file uploaded");
+      return res.status(400).json({ message: "No file uploaded" });
+    }
+    const { buffer } = req.file;
+    const query =
+      "INSERT INTO user_leads (lead_name, lead_email, lead_mobileno,user_id) VALUES ?";
+    const values = [];
+    const stream = csv
+      .parse({ headers: true })
+      .on("data", async (row) => {
+        const { name, email, phone } = row;
+        values.push([name, email, phone, req.body.id]);
+      })
+      .on("end", async () => {
+        await pool.query(query, [values]);
+      });
+    stream.write(buffer);
+    stream.end();
+    res.send({ message: "Leads uploaded successfully", status: 200 });
+  } catch (error) {
+    console.log(error);
+    res.status(500).json({ message: "Internal server error" });
   }
 });
 export default router;
